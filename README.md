@@ -8,5 +8,3 @@ Welcome to my personal tech portfolio! This repository highlights my hands-on ex
 - ☁️ Microsoft Azure cloud services
 
 ---
-
-## 📁 Portfolio Structure
