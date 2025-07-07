@@ -1,0 +1,301 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "location": {
+      "type": "string",
+      "defaultValue": "uksouth",
+      "metadata": {
+        "description": "Location for deployment"
+      }
+    },
+    "adminUsername": {
+      "type": "string",
+      "defaultValue": "FrankieScout1",
+      "metadata": {
+        "description": "Admin username for VMs"
+      }
+    },
+    "adminPassword": {
+      "type": "securestring",
+      "metadata": {
+        "description": "Admin password for VMs"
+      }
+    }
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Network/virtualNetworks",
+      "apiVersion": "2021-05-01",
+      "name": "myVNet",
+      "location": "[parameters('location')]",
+      "properties": {
+        "addressSpace": {
+          "addressPrefixes": ["10.0.0.0/16"]
+        },
+        "subnets": [
+          {
+            "name": "mySubnet",
+            "properties": {
+              "addressPrefix": "10.0.0.0/24"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "Microsoft.Network/publicIPAddresses",
+      "apiVersion": "2021-05-01",
+      "name": "myPublicIP",
+      "location": "[parameters('location')]",
+      "properties": {
+        "publicIPAllocationMethod": "Static"
+      }
+    },
+    {
+      "type": "Microsoft.Network/loadBalancers",
+      "apiVersion": "2021-05-01",
+      "name": "myLoadBalancer",
+      "location": "[parameters('location')]",
+      "dependsOn": ["myPublicIP"],
+      "properties": {
+        "frontendIPConfigurations": [
+          {
+            "name": "myFrontend",
+            "properties": {
+              "publicIPAddress": {
+                "id": "[resourceId('Microsoft.Network/publicIPAddresses', 'myPublicIP')]"
+              }
+            }
+          }
+        ],
+        "backendAddressPools": [
+          {
+            "name": "myBackendPool"
+          }
+        ],
+        "loadBalancingRules": [
+          {
+            "name": "httpRule",
+            "properties": {
+              "frontendIPConfiguration": {
+                "id": "[resourceId('Microsoft.Network/loadBalancers/frontendIPConfigurations', 'myLoadBalancer', 'myFrontend')]"
+              },
+              "backendAddressPool": {
+                "id": "[resourceId('Microsoft.Network/loadBalancers/backendAddressPools', 'myLoadBalancer', 'myBackendPool')]"
+              },
+              "protocol": "Tcp",
+              "frontendPort": 80,
+              "backendPort": 80,
+              "enableFloatingIP": false,
+              "idleTimeoutInMinutes": 4,
+              "loadDistribution": "Default",
+              "probe": {
+                "id": "[resourceId('Microsoft.Network/loadBalancers/probes', 'myLoadBalancer', 'myHealthProbe')]"
+              }
+            }
+          }
+        ],
+		"inboundNatRules": [
+          { "name": "sshVM1",
+		  "properties": {
+			  "frontendIPConfiguration": {
+				  "id": "[resourceId('Microsoft.Network/loadBalancers/frontendIPConfigurations', 'myLoadBalancer', 'myFrontend')]" 
+				  },
+				  "protocol": "Tcp",
+				  "frontendPort": 50001,
+				  "backendPort": 22,
+				  "enableFloatingIP": false }
+				  },
+          { 
+		  "name": "sshVM2",
+		  "properties": {
+			  "frontendIPConfiguration": {
+				  "id": "[resourceId('Microsoft.Network/loadBalancers/frontendIPConfigurations', 'myLoadBalancer', 'myFrontend')]" 
+				  }, 
+				  "protocol": "Tcp", 
+				  "frontendPort": 50002, 
+				  "backendPort": 22, 
+				  "enableFloatingIP": false 
+				  }
+			}
+        ],
+        "probes": [
+          {
+            "name": "myHealthProbe",
+            "properties": {
+              "protocol": "Tcp",
+              "port": 80,
+              "intervalInSeconds": 15,
+              "numberOfProbes": 2
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "Microsoft.Network/networkSecurityGroups",
+      "apiVersion": "2021-05-01",
+      "name": "myNSG",
+      "location": "[parameters('location')]",
+      "properties": {
+        "securityRules": [
+          {
+            "name": "AllowHTTP",
+            "properties": {
+              "priority": 100,
+              "protocol": "Tcp",
+              "access": "Allow",
+              "direction": "Inbound",
+              "sourceAddressPrefix": "*",
+              "sourcePortRange": "*",
+              "destinationAddressPrefix": "*",
+              "destinationPortRange": "80"
+            }
+          },
+          {
+            "name": "AllowSSH",
+            "properties": {
+              "priority": 110,
+              "protocol": "Tcp",
+              "access": "Allow",
+              "direction": "Inbound",
+              "sourceAddressPrefix": "*",
+              "sourcePortRange": "*",
+              "destinationAddressPrefix": "*",
+              "destinationPortRange": "22"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "Microsoft.Network/networkInterfaces",
+      "apiVersion": "2021-05-01",
+      "name": "myNIC1",
+      "location": "[parameters('location')]",
+      "dependsOn": ["myLoadBalancer"],
+      "properties": {
+        "ipConfigurations": [
+          {
+            "name": "ipConfig1",
+            "properties": {
+              "subnet": {
+                "id": "[resourceId('Microsoft.Network/virtualNetworks/subnets', 'myVNet', 'mySubnet')]"
+              },
+              "loadBalancerBackendAddressPools": [
+                {
+                  "id": "[resourceId('Microsoft.Network/loadBalancers/backendAddressPools', 'myLoadBalancer', 'myBackendPool')]"
+                }
+              ], 
+			  "loadBalancerInboundNatRules": [
+                {
+                  "id": "[resourceId('Microsoft.Network/loadBalancers/inboundNatRules', 'myLoadBalancer', 'sshVM1')]"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+	{
+      "type": "Microsoft.Network/networkInterfaces",
+      "apiVersion": "2021-05-01",
+      "name": "myNIC2",
+      "location": "[parameters('location')]",
+      "dependsOn": ["myLoadBalancer"],
+      "properties": {
+        "ipConfigurations": [
+          {
+            "name": "ipConfig2",
+            "properties": {
+              "subnet": {
+                "id": "[resourceId('Microsoft.Network/virtualNetworks/subnets', 'myVNet', 'mySubnet')]"
+              },
+              "loadBalancerBackendAddressPools": [
+                {
+                  "id": "[resourceId('Microsoft.Network/loadBalancers/backendAddressPools', 'myLoadBalancer', 'myBackendPool')]"
+                }
+              ],
+			  "loadBalancerInboundNatRules": [
+                {
+                  "id": "[resourceId('Microsoft.Network/loadBalancers/inboundNatRules', 'myLoadBalancer', 'sshVM2')]"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "Microsoft.Compute/virtualMachines",
+      "apiVersion": "2021-03-01",
+      "name": "myVM1",
+      "location": "[parameters('location')]",
+      "dependsOn": ["myNIC1"],
+      "properties": {
+        "hardwareProfile": {
+          "vmSize": "Standard_B1s"
+        },
+        "osProfile": {
+          "computerName": "myVM1",
+          "adminUsername": "[parameters('adminUsername')]",
+          "adminPassword": "[parameters('adminPassword')]"
+        },
+        "storageProfile": {
+          "imageReference": {
+            "publisher": "Canonical",
+            "offer": "UbuntuServer",
+            "sku": "18.04-LTS",
+            "version": "latest"
+          },
+          "osDisk": {
+            "createOption": "FromImage"
+          }
+        },
+        "networkProfile": {
+          "networkInterfaces": [
+            {
+              "id": "[resourceId('Microsoft.Network/networkInterfaces', 'myNIC1')]"
+            }
+          ]
+        }
+      }
+    },
+	{
+      "type": "Microsoft.Compute/virtualMachines",
+      "apiVersion": "2021-03-01",
+      "name": "myVM2",
+      "location": "[parameters('location')]",
+      "dependsOn": ["myNIC2"],
+      "properties": {
+        "hardwareProfile": {
+          "vmSize": "Standard_B1s"
+        },
+        "osProfile": {
+          "computerName": "myVM2",
+          "adminUsername": "[parameters('adminUsername')]",
+          "adminPassword": "[parameters('adminPassword')]"
+        },
+        "storageProfile": {
+          "imageReference": {
+            "publisher": "Canonical",
+            "offer": "UbuntuServer",
+            "sku": "18.04-LTS",
+            "version": "latest"
+          },
+          "osDisk": {
+            "createOption": "FromImage"
+          }
+        },
+        "networkProfile": {
+          "networkInterfaces": [
+            {
+              "id": "[resourceId('Microsoft.Network/networkInterfaces', 'myNIC2')]"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}
